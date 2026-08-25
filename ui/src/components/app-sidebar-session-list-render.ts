@@ -1,4 +1,5 @@
 import { html, nothing } from "lit";
+import { repeat } from "lit/directives/repeat.js";
 import type { SessionCatalog } from "../../../packages/gateway-protocol/src/index.ts";
 import type { GatewaySessionRow } from "../api/types.ts";
 import type { CatalogOpenTarget } from "../app/settings.ts";
@@ -233,7 +234,11 @@ function renderSessionSection(params: {
         : html`
             ${section.rows.length > 0
               ? html`<div class="sidebar-recent-sessions__list" role="list" aria-label=${label}>
-                  ${section.rows.map((session) => renderSessionTree({ host, session }))}
+                  ${repeat(
+                    section.rows,
+                    (session) => session.key,
+                    (session) => renderSessionTree({ host, session }),
+                  )}
                 </div>`
               : nothing}
             ${renderSessionPagination({
