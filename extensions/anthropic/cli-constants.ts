@@ -4,6 +4,14 @@
  */
 /** Synthetic provider/backend id for Claude Code CLI-backed Anthropic models. */
 export const CLAUDE_CLI_BACKEND_ID = "claude-cli";
+/**
+ * Retired claude-cli auth-profile id this plugin owns. Kept as a local literal
+ * (mirrors plugin-sdk provider-auth's CLAUDE_CLI_PROFILE_ID) because importing
+ * that barrel drags the auth store into the provider-policy artifact: dist-less
+ * checkouts then jiti-compile ~2.2k modules inside the first caller (#129052
+ * regressed CI shards to 120s "timeouts"). cli-constants.test.ts pins parity.
+ */
+export const CLAUDE_CLI_RETIRED_PROFILE_ID = "anthropic:claude-cli";
 /** Non-secret marker telling OpenClaw that the installed Claude CLI owns auth. */
 export const CLAUDE_CLI_NATIVE_AUTH_MARKER = ["openclaw", "claude-cli-native-auth"].join(":");
 /** Default Claude CLI model ref for agent defaults and live tests. */
