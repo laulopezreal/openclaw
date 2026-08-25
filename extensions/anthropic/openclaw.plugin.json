@@ -18,7 +18,7 @@
     "onStartup": true
   },
   "enabledByDefault": true,
-  "providers": ["anthropic"],
+  "providers": ["anthropic", "claude-cli"],
   "providerUsageAuthEnvVars": {
     "anthropic": ["ANTHROPIC_ADMIN_KEY", "ANTHROPIC_ADMIN_API_KEY"]
   },
