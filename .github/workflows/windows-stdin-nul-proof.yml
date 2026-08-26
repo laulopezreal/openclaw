@@ -35,9 +35,11 @@ jobs:
     steps:
       - name: Resolve target head
         id: head
+        env:
+          TARGET_REF: ${{ inputs.target_ref }}
         run: |
           set -euo pipefail
-          head_ref="${{ inputs.target_ref }}"
+          head_ref="$TARGET_REF"
           if [[ -z "$head_ref" ]]; then
             head_ref="$PR_HEAD"
           fi
