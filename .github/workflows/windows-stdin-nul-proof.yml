@@ -1,0 +1,155 @@
+name: Windows stdin NUL proof (#112173)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_ref:
+        description: "Exact 40-char commit SHA to prove (PR head)"
+        required: false
+        default: ""
+        type: string
+      runner_label:
+        description: "Windows runner label"
+        required: false
+        default: "windows-2025"
+        type: string
+  push:
+    branches:
+      - "proof/windows-stdin-nul-schtasks"
+
+permissions:
+  contents: read
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+  PR_HEAD: b763b80623e1a4f53c0ca28c59f5911332460876
+
+jobs:
+  proof:
+    name: Native Scheduled Task stdin proof
+    runs-on: ${{ inputs.runner_label || 'windows-2025' }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Resolve target head
+        id: head
+        run: |
+          set -euo pipefail
+          head_ref="${{ inputs.target_ref }}"
+          if [[ -z "$head_ref" ]]; then
+            head_ref="$PR_HEAD"
+          fi
+          if [[ ! "$head_ref" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            echo "::error::target_ref must be an exact 40-character commit SHA, got '$head_ref'." >&2
+            exit 1
+          fi
+          echo "expected_head=${head_ref,,}" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.head.outputs.expected_head }}
+          persist-credentials: false
+          submodules: false
+
+      - name: Verify checkout head
+        run: |
+          set -euo pipefail
+          actual="$(git rev-parse HEAD)"
+          expected="${{ steps.head.outputs.expected_head }}"
+          if [[ "$actual" != "$expected" ]]; then
+            echo "::error::Checked out $actual, expected $expected." >&2
+            exit 1
+          fi
+          echo "proving_head=$actual"
+
+      - name: Preflight interactive session
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+          $isAdmin = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          $sessionId = (Get-Process -Id $PID).SessionId
+          Write-Host "identity=$($identity.Name)"
+          Write-Host "session_id=$sessionId"
+          Write-Host "user_interactive=$([Environment]::UserInteractive)"
+          Write-Host "administrator=$isAdmin"
+          if (-not [Environment]::UserInteractive) {
+            throw "Native Scheduled Task proof requires an interactive Windows runner session."
+          }
+          if (-not $isAdmin) {
+            throw "Native Scheduled Task proof requires an administrator session."
+          }
+          exit 0
+
+      - name: Setup Node.js
+        env:
+          REQUESTED_NODE_VERSION: "22.x"
+        run: |
+          set -euo pipefail
+          source .github/actions/setup-pnpm-store-cache/ensure-node.sh
+          openclaw_ensure_node "$REQUESTED_NODE_VERSION"
+
+      - name: Setup pnpm
+        uses: ./.github/actions/setup-pnpm-store-cache
+        with:
+          cache-mode: off
+          node-version: 22.x
+
+      - name: Capture node path
+        run: |
+          node_bin="$(dirname "$(node -p 'process.execPath')")"
+          if command -v cygpath >/dev/null 2>&1; then
+            node_bin="$(cygpath -u "$node_bin")"
+          fi
+          echo "NODE_BIN=$node_bin" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        env:
+          CI: "true"
+        run: |
+          set -euo pipefail
+          export PATH="$NODE_BIN:$PATH"
+          node -v
+          pnpm -v
+          pnpm install --frozen-lockfile --prefer-offline --ignore-scripts=false --config.engine-strict=false --config.enable-pre-post-scripts=true --config.side-effects-cache=true || pnpm install --frozen-lockfile --prefer-offline --ignore-scripts=false --config.engine-strict=false --config.enable-pre-post-scripts=true --config.side-effects-cache=true
+
+      - name: Unit test (stdin NUL redirect + readback)
+        env:
+          CI: "true"
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          set -euo pipefail
+          export PATH="$NODE_BIN:$PATH"
+          node scripts/run-vitest.mjs run src/daemon/schtasks.install.test.ts
+
+      - name: Native Scheduled Task lifecycle proof
+        id: native_schtasks
+        timeout-minutes: 10
+        env:
+          CI_WINDOWS_SCHTASKS_PROOF_PATH: ${{ github.workspace }}\.artifacts\windows-schtasks\proof.json
+          CI_WINDOWS_SCHTASKS_ROOT: ${{ runner.temp }}\openclaw-schtasks-${{ github.run_id }}-${{ github.run_attempt }}
+          CI_WINDOWS_SCHTASKS_TEST_ID: ${{ github.run_id }}-${{ github.run_attempt }}
+          EXPECTED_HEAD: ${{ steps.head.outputs.expected_head }}
+        run: |
+          set -euo pipefail
+          export PATH="$NODE_BIN:$PATH"
+          export CI_WINDOWS_SCHTASKS_HEAD="$(git rev-parse HEAD)"
+          mkdir -p .artifacts/windows-schtasks
+          pnpm test:windows:schtasks:integration
+
+      - name: Upload proof artifact
+        id: proof_upload
+        if: ${{ always() }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: windows-stdin-nul-proof-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            .artifacts/windows-schtasks/proof.json
+            ${{ runner.temp }}\openclaw-schtasks-${{ github.run_id }}-${{ github.run_attempt }}\cleanup-summary.txt
+            ${{ runner.temp }}\openclaw-schtasks-${{ github.run_id }}-${{ github.run_attempt }}\failure-diagnostics.json
+          if-no-files-found: warn
+          retention-days: 7
