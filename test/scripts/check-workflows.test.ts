@@ -268,4 +268,16 @@ describe("check-workflows", () => {
     expect(workflow).toContain("if: ${{ always() && !cancelled() }}");
     expect(workflow).toContain("if: ${{ always() && !cancelled() && inputs.require_wsl2 }}");
   });
+
+  it("pins the native Scheduled Task ACP permission proof to the reviewed head", () => {
+    const workflow = readFileSync(".github/workflows/windows-stdin-nul-proof.yml", "utf8");
+
+    expect(workflow).toContain("PR_HEAD: f2ad4bf6294ad438548ae77028c3cd8a427c2869");
+    expect(workflow).toContain("pnpm test:windows:schtasks:integration");
+    expect(workflow).toContain("path: proof-harness");
+    expect(workflow).toContain("Native ACP non-interactive permission proof");
+    expect(workflow).toContain("CI_WINDOWS_SCHTASKS_TARGET_ROOT: ${{ github.workspace }}");
+    expect(workflow).toContain("acp-permission-proof.json");
+    expect(workflow).toContain("windows-stdin-nul-acp-permission-proof-");
+  });
 });
